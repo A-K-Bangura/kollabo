@@ -1,15 +1,15 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.server.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023"],
+    "module": "esnext",
     "types": ["node"],
     "skipLibCheck": true,
     "strict": true,
 
-    /* Bundler mode */
-    "module": "nodenext",
-    "allowImportingTsExtensions": true,
+    /* Vercel Functions run as native ESM: relative imports use .js extensions */
+    "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
@@ -20,5 +20,6 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "drizzle.config.ts", "server/dev"]
+  "include": ["api", "server", "shared"],
+  "exclude": ["server/dev"]
 }
