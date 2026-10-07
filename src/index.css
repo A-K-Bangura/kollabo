@@ -1,1 +1,169 @@
 @import 'tailwindcss';
+
+/*
+ * Design tokens. Components use the semantic names (bg-surface, text-muted, ...)
+ * and never raw colours, so dark mode is just a second set of values below.
+ */
+@theme inline {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-ink: var(--danger-ink);
+
+  --shadow-sheet: 0 -8px 30px rgb(0 0 0 / 0.12);
+}
+
+:root {
+  color-scheme: light dark;
+  --canvas: #f6f5f2;
+  --surface: #ffffff;
+  --raised: #f0eee9;
+  --ink: #1c1f23;
+  --muted: #5b616a;
+  --line: #e3e1da;
+  --accent: #0f766e;
+  --accent-hover: #0b5f58;
+  --accent-ink: #ffffff;
+  --accent-soft: #e0f2ef;
+  --success: #15803d;
+  --success-soft: #e2f3e7;
+  --warn: #a8530a;
+  --warn-soft: #fcefd6;
+  --danger: #b42318;
+  --danger-soft: #fce8e6;
+  --danger-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #111315;
+    --surface: #1a1d20;
+    --raised: #23272b;
+    --ink: #eceef0;
+    --muted: #a3aab2;
+    --line: #2d3237;
+    --accent: #2dd4bf;
+    --accent-hover: #5eead4;
+    --accent-ink: #052e29;
+    --accent-soft: #123430;
+    --success: #4ade80;
+    --success-soft: #14301f;
+    --warn: #fbbf24;
+    --warn-soft: #35290d;
+    --danger: #f87171;
+    --danger-soft: #3a1816;
+    --danger-ink: #2a0a08;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Never rely on the browser default ring: it is invisible on some surfaces. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* A modal dialog must not let the page behind it scroll. */
+  html:has(dialog[open]) {
+    overflow: hidden;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary,
+  label[for] {
+    cursor: pointer;
+  }
+
+  ::placeholder {
+    color: var(--muted);
+    opacity: 0.8;
+  }
+}
+
+/* Dialogs: a bottom sheet on phones, a right-hand drawer from sm up. */
+@keyframes sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+@keyframes sheet-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    transform: scale(0.97);
+    opacity: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@layer components {
+  dialog.sheet[open] {
+    animation: sheet-up 180ms ease-out;
+  }
+  dialog.pop[open] {
+    animation: pop-in 140ms ease-out;
+  }
+  dialog[open]::backdrop {
+    animation: fade-in 180ms ease-out;
+  }
+
+  @media (min-width: 40rem) {
+    dialog.sheet[open] {
+      animation-name: sheet-in;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    dialog[open],
+    dialog[open]::backdrop {
+      animation: none;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

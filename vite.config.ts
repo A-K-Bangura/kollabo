@@ -13,6 +13,10 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, 'src'),
     },
   },
+  build: {
+    // The whole app is one ~185 kB (gzipped) bundle; splitting it would only add requests.
+    chunkSizeWarningLimit: 700,
+  },
   test: {
     environment: 'node',
     include: ['{api,server,shared,src}/**/*.test.ts'],
