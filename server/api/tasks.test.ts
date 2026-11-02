@@ -186,6 +186,23 @@ describe('editing task details', () => {
     expect(describeActivity(await activityOf(client, task.id)).at(-1)).toBe('updated')
   })
 
+  it('records which details changed (never their text) and where a deadline moved, for future reminders', async () => {
+    const { client } = await createCollabo()
+    const task = await createTask(client, { title: 'Secret title', dueDate: '2026-10-10' })
+    await client.patch(`/api/tasks/${task.id}`, {
+      body: { expectedVersion: 1, dueDate: '2026-10-12', description: 'Confidential details' },
+    })
+    await client.patch(`/api/tasks/${task.id}`, { body: { expectedVersion: 2, title: 'Another title' } })
+
+    const updates = (await activityOf(client, task.id)).filter((entry) => entry.action === 'updated')
+    expect(updates[0]?.details).toEqual({
+      changed: ['description', 'dueDate'],
+      dueDate: { from: '2026-10-10', to: '2026-10-12' },
+    })
+    expect(updates[1]?.details).toEqual({ changed: ['title'] })
+    expect(JSON.stringify(updates)).not.toMatch(/Secret title|Confidential|Another title/)
+  })
+
   it('leaves no trace and keeps the version when a save changes nothing', async () => {
     const { client } = await createCollabo()
     const task = await createTask(client, { title: 'Same' })

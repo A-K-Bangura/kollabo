@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { createTaskSchema, updateTaskSchema } from '../../shared/schemas.js'
-import type { TaskDto } from '../../shared/types.js'
+import type { ActivityDetails, TaskDto } from '../../shared/types.js'
 import { actorRef, type ReadScope, type Scope } from '../actors.js'
 import type { Database } from '../db/client.js'
 import { taskAssignees, tasks } from '../db/schema.js'
@@ -147,7 +147,14 @@ export async function updateTask(
       mirror = result.mirror
     }
     if (detailsTouched) {
-      events.unshift({ action: 'updated', details: reason ? { reason } : null })
+      // Which fields changed (never their text), plus the due date itself: a deadline moving is
+      // exactly what a future reminder system would need to notice, and a date is not sensitive.
+      const details: ActivityDetails = {
+        changed: Object.keys(detailSet),
+        ...(detailSet.dueDate !== undefined ? { dueDate: { from: task.dueDate, to: input.dueDate ?? null } } : {}),
+        ...(reason ? { reason } : {}),
+      }
+      events.unshift({ action: 'updated', details })
     }
 
     await saveTask(tx, scope, task, set, mirror)

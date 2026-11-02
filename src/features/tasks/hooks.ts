@@ -4,7 +4,7 @@ import type { ActivityDto, NoteRevisionDto, TaskDto } from '@shared/types'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { toast } from 'sonner'
-import { useProjectKeys, useProjectScope } from '@/features/scope/scope'
+import { useProjectKeys, useProjectScope } from '@/features/scope/useScope'
 import { useReportError } from '@/features/session/hooks'
 import { isConflict } from '@/lib/api'
 

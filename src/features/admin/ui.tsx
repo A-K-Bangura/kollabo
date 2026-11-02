@@ -1,5 +1,4 @@
 import type { ProjectStatus } from '@shared/constants'
-import { formatDistanceToNowStrict, parseISO } from 'date-fns'
 import { RefreshCw } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
@@ -21,10 +20,6 @@ export function ProjectStatusPill({ status }: { status: ProjectStatus }) {
       {label}
     </span>
   )
-}
-
-export function relativeTime(iso: string): string {
-  return `${formatDistanceToNowStrict(parseISO(iso))} ago`
 }
 
 interface StatProps {

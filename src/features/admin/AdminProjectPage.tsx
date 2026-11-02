@@ -16,10 +16,11 @@ import { MembersSection } from '@/features/team/MembersSection'
 import { ApiClientError } from '@/lib/api'
 import { adminApi } from '@/lib/adminApi'
 import { cn } from '@/lib/cn'
+import { relativeTime } from '@/lib/dates'
 import { AuditEntries } from './AuditEntries'
 import { adminKeys } from './hooks'
 import { ProjectActions } from './ProjectActions'
-import { AdminRefresh, ProjectStatusPill, SectionHeading, Stat, relativeTime } from './ui'
+import { AdminRefresh, ProjectStatusPill, SectionHeading, Stat } from './ui'
 
 const TABS = [
   { value: 'overview', label: 'Overview' },

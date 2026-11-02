@@ -18,7 +18,7 @@ import { describeModeChange } from '@shared/task-progress'
 import type { TaskDto } from '@shared/types'
 import { addDays } from 'date-fns'
 import { useMemo, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { Button } from '@/components/ui/Button'
@@ -26,7 +26,7 @@ import { PromptDialog } from '@/components/ui/Dialog'
 import { InlineAlert } from '@/components/ui/feedback'
 import { TextAreaField, TextField } from '@/components/ui/fields'
 import { Segmented } from '@/components/ui/Segmented'
-import { useProjectScope } from '@/features/scope/scope'
+import { useProjectScope } from '@/features/scope/useScope'
 import { useReportError } from '@/features/session/hooks'
 import { useMemberLookup } from '@/features/team/hooks'
 import { ApiClientError, isConflict } from '@/lib/api'
@@ -120,7 +120,7 @@ export function TaskForm({ task, defaultDueDate = null, onDone, onCancel }: Task
     resolver: zodResolver(formSchema),
     defaultValues: initialValues(task, { dueDate: defaultDueDate, me: scope.me?.id ?? null }),
   })
-  const { register, handleSubmit, setValue, watch, formState } = form
+  const { register, handleSubmit, setValue, control, formState } = form
   // Read during render on purpose: react-hook-form only tracks the formState
   // fields that are read while rendering, so reading isDirty later would be stale.
   const { errors, isDirty } = formState
@@ -132,8 +132,8 @@ export function TaskForm({ task, defaultDueDate = null, onDone, onCancel }: Task
   const [refreshing, setRefreshing] = useState(false)
   const [pending, setPending] = useState<FormValues | null>(null)
 
-  const assigneeIds = watch('assigneeIds')
-  const mode = watch('assignmentMode')
+  const assigneeIds = useWatch({ control, name: 'assigneeIds' })
+  const mode = useWatch({ control, name: 'assignmentMode' })
   const isAdmin = scope.viewer === 'admin'
 
   const setDueDate = (date: Date | null) =>

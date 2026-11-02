@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/Button'
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/feedback'
 import { adminApi } from '@/lib/adminApi'
 import { cn } from '@/lib/cn'
+import { relativeTime } from '@/lib/dates'
 import { adminKeys } from './hooks'
-import { AdminRefresh, ProjectStatusPill, relativeTime } from './ui'
+import { AdminRefresh, ProjectStatusPill } from './ui'
 
 const STATUS_FILTERS = [{ value: 'all', label: 'All' }, ...PROJECT_STATUSES.map((s) => ({ value: s, label: s[0]!.toUpperCase() + s.slice(1) }))]
 

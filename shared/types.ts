@@ -94,6 +94,10 @@ export interface ActivityDetails {
   toMode?: AssignmentMode
   /** Note revision number written by this event. */
   revision?: number
+  /** For `updated`: which details changed ('title', 'description', 'priority', 'dueDate'), never their text. */
+  changed?: string[]
+  /** For `updated` when the deadline moved. */
+  dueDate?: { from: string | null; to: string | null }
   /** Why a platform admin did it. */
   reason?: string
 }
