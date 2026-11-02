@@ -4,12 +4,12 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { RefreshBar } from '@/components/layout/RefreshBar'
 import { Button } from '@/components/ui/Button'
 import { EmptyState, ErrorState, TaskListSkeleton } from '@/components/ui/feedback'
-import { useCurrentMember } from '@/features/session/context'
+import { useProjectScope } from '@/features/scope/scope'
 import { cn } from '@/lib/cn'
 import { todayKey } from '@/lib/dates'
 import { useNow } from '@/lib/useNow'
 import { useTasksQuery } from './hooks'
-import { FILTERS, filterTasks, isTaskFilter, sortTasks, type TaskFilter } from './lib'
+import { filterTasks, filtersFor, isTaskFilter, sortTasks, type TaskFilter } from './lib'
 import { TaskList } from './TaskList'
 import { useTaskSheet } from './useTaskSheet'
 
@@ -21,17 +21,18 @@ const EMPTY_FILTER_COPY: Record<TaskFilter, { title: string; description: string
   completed: { title: 'Nothing finished yet.', description: 'Completed tasks will collect here.' },
 }
 
-/** The heart of Collabo: one clean list, filtered by who and by status. */
-export function TasksPage() {
+/** The list and its filters, without a page header, so other screens (the admin project page) can embed it. */
+export function TasksView() {
   const tasks = useTasksQuery()
-  const member = useCurrentMember()
+  const { me } = useProjectScope()
   const { openNew } = useTaskSheet()
   const [params, setParams] = useSearchParams()
   const now = useNow(60_000)
   const today = todayKey(new Date(now))
 
   const requested = params.get('filter')
-  const filter: TaskFilter = isTaskFilter(requested) ? requested : 'all'
+  const filters = filtersFor(me !== null)
+  const filter: TaskFilter = isTaskFilter(requested) && filters.some((f) => f.value === requested) ? requested : 'all'
 
   const setFilter = (next: TaskFilter) =>
     setParams(
@@ -45,18 +46,14 @@ export function TasksPage() {
     )
 
   const visible = useMemo(
-    () => (tasks.data ? sortTasks(filterTasks(tasks.data, filter, member.id)) : []),
-    [tasks.data, filter, member.id],
+    () => (tasks.data ? sortTasks(filterTasks(tasks.data, filter, me?.id ?? null)) : []),
+    [tasks.data, filter, me?.id],
   )
 
   return (
     <>
-      <PageHeader title="Tasks">
-        <RefreshBar />
-      </PageHeader>
-
       <div role="group" aria-label="Filter tasks" className="mb-4 flex flex-wrap gap-1.5 sm:gap-2">
-        {FILTERS.map(({ value, label }) => (
+        {filters.map(({ value, label }) => (
           <button
             key={value}
             type="button"
@@ -89,6 +86,18 @@ export function TasksPage() {
             }
           />
         ))}
+    </>
+  )
+}
+
+/** The heart of Collabo: one clean list, filtered by who and by status. */
+export function TasksPage() {
+  return (
+    <>
+      <PageHeader title="Tasks">
+        <RefreshBar />
+      </PageHeader>
+      <TasksView />
     </>
   )
 }

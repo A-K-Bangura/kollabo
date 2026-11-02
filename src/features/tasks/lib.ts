@@ -1,5 +1,6 @@
 import type { TaskPriority, TaskStatus } from '@shared/constants'
-import type { TaskDto } from '@shared/types'
+import { ownProgressBlock, progressCounts } from '@shared/task-progress'
+import type { AssigneeDto, MemberDto, TaskDto } from '@shared/types'
 import { parseISO } from 'date-fns'
 import { toDateKey } from '@/lib/dates'
 
@@ -12,6 +13,11 @@ export const FILTERS: { value: TaskFilter; label: string }[] = [
   { value: 'in_progress', label: 'In Progress' },
   { value: 'completed', label: 'Done' },
 ]
+
+/** "Mine" only means something to a member; an administrator has no tasks of their own. */
+export function filtersFor(hasMember: boolean): typeof FILTERS {
+  return hasMember ? FILTERS : FILTERS.filter((filter) => filter.value !== 'mine')
+}
 
 export function isTaskFilter(value: string | null): value is TaskFilter {
   return FILTERS.some((filter) => filter.value === value)
@@ -47,16 +53,61 @@ export function sortTasks(tasks: readonly TaskDto[]): TaskDto[] {
 export function filterTasks(
   tasks: readonly TaskDto[],
   filter: TaskFilter,
-  memberId: string,
+  memberId: string | null,
 ): TaskDto[] {
   switch (filter) {
     case 'all':
       return [...tasks]
     case 'mine':
-      return tasks.filter((task) => task.assignedToMemberId === memberId)
+      return memberId ? tasks.filter((task) => isAssigned(task, memberId)) : []
     default:
       return tasks.filter((task) => task.status === filter)
   }
+}
+
+export function isAssigned(task: TaskDto, memberId: string | null): boolean {
+  return memberId !== null && task.assignees.some((assignee) => assignee.memberId === memberId)
+}
+
+export function myRow(task: TaskDto, memberId: string | null): AssigneeDto | undefined {
+  return memberId ? task.assignees.find((assignee) => assignee.memberId === memberId) : undefined
+}
+
+/** What a person can do with their own progress on a task right now. */
+export type ProgressAccess =
+  | { kind: 'assignee'; row: AssigneeDto }
+  /** Finished for the whole group (ANY): nothing moves until someone reopens it. */
+  | { kind: 'group-completed'; row: AssigneeDto }
+  | { kind: 'not-assigned' }
+
+export function progressAccess(task: TaskDto, memberId: string | null): ProgressAccess {
+  const row = myRow(task, memberId)
+  if (!row) return { kind: 'not-assigned' }
+  return ownProgressBlock(task.assignmentMode, task.status)
+    ? { kind: 'group-completed', row }
+    : { kind: 'assignee', row }
+}
+
+/**
+ * Who a task is for, in few words: "Mariama", "Mariama and Ibrahim", "Mariama, Ibrahim +3".
+ * Removed members keep their names so old tasks stay readable.
+ */
+export function assigneeLabel(
+  task: TaskDto,
+  find: (id: string | null) => MemberDto | undefined,
+): string {
+  const names = task.assignees.map((assignee) => find(assignee.memberId)?.name ?? 'Someone')
+  if (names.length === 0) return 'Unassigned'
+  if (names.length === 1) return names[0]!
+  if (names.length === 2) return `${names[0]} and ${names[1]}`
+  return `${names[0]}, ${names[1]} +${names.length - 2}`
+}
+
+/** "2 of 3 done" for a task everyone completes their own part of. Anything else needs no count. */
+export function progressLabel(task: TaskDto): string | null {
+  if (task.assignmentMode !== 'all' || task.assignees.length < 2) return null
+  const { completed, total } = progressCounts(task.assignees)
+  return `${completed} of ${total} done`
 }
 
 export function isOverdue(task: TaskDto, today: string): boolean {
@@ -99,25 +150,14 @@ export function groupByDueDate(tasks: readonly TaskDto[]): Map<string, TaskDto[]
   return groups
 }
 
-/** To Do -> In Progress -> Done, and a finished task reopens to To Do. */
-export function nextStatus(status: TaskStatus): TaskStatus {
-  switch (status) {
-    case 'todo':
-      return 'in_progress'
-    case 'in_progress':
-      return 'completed'
-    case 'completed':
-      return 'todo'
-  }
-}
-
-export function statusActionLabel(status: TaskStatus): string {
+/** The label for the one-tap button on your own part of a task. */
+export function statusActionLabel(status: TaskStatus, mode: TaskDto['assignmentMode']): string {
   switch (status) {
     case 'todo':
       return 'Start'
     case 'in_progress':
-      return 'Mark done'
+      return mode === 'any' ? 'Mark done for everyone' : 'Mark my part done'
     case 'completed':
-      return 'Reopen'
+      return 'Reopen my part'
   }
 }

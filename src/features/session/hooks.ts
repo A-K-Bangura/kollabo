@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
+import { MEMBER_PREFIX, projectKeysFor } from '@/features/scope/scope'
 import { api, ApiClientError, isSessionError } from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
 import { useSessionState } from './sessionState'
@@ -75,7 +76,7 @@ export function useCreateProject() {
     onSuccess: ({ project, members, creatorMemberId, accessCode }) => {
       queryClient.clear()
       queryClient.setQueryData(queryKeys.project, project)
-      queryClient.setQueryData(queryKeys.members, members)
+      queryClient.setQueryData(projectKeysFor(MEMBER_PREFIX).members, members)
       selectMember(project.id, creatorMemberId)
       // The one moment the plain code exists. It is held in memory only.
       setRevealedCode(accessCode)
