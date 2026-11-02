@@ -1,5 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { LIMITS, MODE_LABELS, PRIORITY_LABELS, STATUS_LABELS, TASK_PRIORITIES } from '@shared/constants'
+import {
+  LIMITS,
+  MODE_LABELS,
+  PRIORITY_LABELS,
+  STATUS_LABELS,
+  TASK_PRIORITIES,
+} from '@shared/constants'
 import type { CreateTaskInput, UpdateTaskInput } from '@shared/schemas'
 import {
   assignmentModeSchema,
@@ -33,7 +39,10 @@ const formSchema = z.object({
   title: taskTitleSchema,
   description: z
     .string()
-    .max(LIMITS.taskDescription, `Description must be ${LIMITS.taskDescription} characters or fewer`),
+    .max(
+      LIMITS.taskDescription,
+      `Description must be ${LIMITS.taskDescription} characters or fewer`,
+    ),
   assigneeIds: z.array(z.string()).min(1, 'Choose at least one person'),
   assignmentMode: assignmentModeSchema,
   /** '' means no due date. */
@@ -45,11 +54,18 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
-function initialValues(task: TaskDto | undefined, defaults: { dueDate: string | null; me: string | null }): FormValues {
+function initialValues(
+  task: TaskDto | undefined,
+  defaults: { dueDate: string | null; me: string | null },
+): FormValues {
   return {
     title: task?.title ?? '',
     description: task?.description ?? '',
-    assigneeIds: task ? task.assignees.map((assignee) => assignee.memberId) : defaults.me ? [defaults.me] : [],
+    assigneeIds: task
+      ? task.assignees.map((assignee) => assignee.memberId)
+      : defaults.me
+        ? [defaults.me]
+        : [],
     assignmentMode: task?.assignmentMode ?? 'all',
     dueDate: task?.dueDate ?? defaults.dueDate ?? '',
     priority: task?.priority ?? 'medium',
@@ -171,7 +187,10 @@ export function TaskForm({ task, defaultDueDate = null, onDone, onCancel }: Task
         onError: (error) => {
           setPending(null)
           if (isConflict(error)) setConflict(true)
-          else if (error instanceof ApiClientError && error.code === 'MODE_CHANGE_NEEDS_CONFIRMATION') {
+          else if (
+            error instanceof ApiClientError &&
+            error.code === 'MODE_CHANGE_NEEDS_CONFIRMATION'
+          ) {
             setPending(values)
           } else report(error)
         },
@@ -212,126 +231,150 @@ export function TaskForm({ task, defaultDueDate = null, onDone, onCancel }: Task
   const busy = create.isPending || update.isPending
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
-      {conflict && (
-        <InlineAlert
-          tone="warn"
-          action={
-            <Button size="sm" variant="secondary" onClick={() => void refresh()} loading={refreshing}>
-              Refresh
-            </Button>
-          }
-        >
-          This task has changed since you last refreshed. Refresh it before editing.
-        </InlineAlert>
-      )}
-
-      <TextField
-        label="Title"
-        autoFocus={!task}
-        autoComplete="off"
-        maxLength={LIMITS.taskTitle + 20}
-        placeholder="What needs doing?"
-        error={errors.title?.message}
-        {...register('title')}
-      />
-
-      <TextAreaField
-        label="Description (optional)"
-        placeholder="Anything the team should know"
-        error={errors.description?.message}
-        {...register('description')}
-      />
-
-      <AssigneePicker
-        members={members}
-        value={assigneeIds}
-        onChange={(ids) => setValue('assigneeIds', ids, { shouldDirty: true, shouldValidate: true })}
-        error={errors.assigneeIds?.message}
-      />
-
-      <Segmented
-        legend="Who needs to finish it?"
-        value={mode}
-        onChange={(value) => setValue('assignmentMode', value, { shouldDirty: true })}
-        options={MODE_OPTIONS}
-        disabled={assigneeIds.length < 2 && !task}
-      />
-      {assigneeIds.length < 2 && (
-        <p className="-mt-3 text-sm text-muted">This only matters once two or more people are assigned.</p>
-      )}
-
-      {reopensTask && (
-        <InlineAlert tone="warn">
-          Adding people reopens this task, because their part isn’t done yet.
-        </InlineAlert>
-      )}
-
-      <div className="flex flex-col gap-2">
-        <TextField label="Due date" type="date" error={errors.dueDate?.message} {...register('dueDate')} />
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" onClick={() => setDueDate(new Date())}>
-            Today
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setDueDate(addDays(new Date(), 1))}>
-            Tomorrow
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setDueDate(null)}>
-            Clear
-          </Button>
-        </div>
-      </div>
-
-      <fieldset className="flex flex-col gap-1.5">
-        <legend className="mb-1.5 text-sm font-medium">Priority</legend>
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-raised p-1">
-          {TASK_PRIORITIES.map((priority) => (
-            <label key={priority} className="relative">
-              <input type="radio" value={priority} className="peer sr-only" {...register('priority')} />
-              <span
-                className={cn(
-                  'flex h-11 items-center justify-center rounded-lg text-sm font-medium text-muted transition',
-                  'peer-checked:bg-surface peer-checked:text-ink peer-checked:shadow-sm',
-                  'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
-                )}
+    <>
+      <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
+        {conflict && (
+          <InlineAlert
+            tone="warn"
+            action={
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void refresh()}
+                loading={refreshing}
               >
-                {PRIORITY_LABELS[priority]}
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+                Refresh
+              </Button>
+            }
+          >
+            This task has changed since you last refreshed. Refresh it before editing.
+          </InlineAlert>
+        )}
 
-      {isAdmin && task && (
-        <TextAreaField
-          label="Reason (optional)"
-          hint="Recorded in the admin audit log. Members never see it."
-          rows={2}
-          error={errors.reason?.message}
-          {...register('reason')}
+        <TextField
+          label="Title"
+          autoFocus={!task}
+          autoComplete="off"
+          maxLength={LIMITS.taskTitle + 20}
+          placeholder="What needs doing?"
+          error={errors.title?.message}
+          {...register('title')}
         />
-      )}
 
-      <div className="sticky bottom-0 -mx-5 -mb-5 flex gap-2 border-t border-line bg-surface px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
-        <Button variant="secondary" className="flex-1" onClick={onCancel} disabled={busy}>
-          Cancel
-        </Button>
-        <Button type="submit" className="flex-1" loading={busy}>
-          {task ? 'Save changes' : 'Add task'}
-        </Button>
-      </div>
+        <TextAreaField
+          label="Description (optional)"
+          placeholder="Anything the team should know"
+          error={errors.description?.message}
+          {...register('description')}
+        />
 
+        <AssigneePicker
+          members={members}
+          value={assigneeIds}
+          onChange={(ids) =>
+            setValue('assigneeIds', ids, { shouldDirty: true, shouldValidate: true })
+          }
+          error={errors.assigneeIds?.message}
+        />
+
+        <Segmented
+          legend="Who needs to finish it?"
+          value={mode}
+          onChange={(value) => setValue('assignmentMode', value, { shouldDirty: true })}
+          options={MODE_OPTIONS}
+          disabled={assigneeIds.length < 2 && !task}
+        />
+        {assigneeIds.length < 2 && (
+          <p className="-mt-3 text-sm text-muted">
+            This only matters once two or more people are assigned.
+          </p>
+        )}
+
+        {reopensTask && (
+          <InlineAlert tone="warn">
+            Adding people reopens this task, because their part isn’t done yet.
+          </InlineAlert>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <TextField
+            label="Due date"
+            type="date"
+            error={errors.dueDate?.message}
+            {...register('dueDate')}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setDueDate(new Date())}>
+              Today
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setDueDate(addDays(new Date(), 1))}
+            >
+              Tomorrow
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setDueDate(null)}>
+              Clear
+            </Button>
+          </div>
+        </div>
+
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1.5 text-sm font-medium">Priority</legend>
+          <div className="grid grid-cols-3 gap-1 rounded-xl bg-raised p-1">
+            {TASK_PRIORITIES.map((priority) => (
+              <label key={priority} className="relative">
+                <input
+                  type="radio"
+                  value={priority}
+                  className="peer sr-only"
+                  {...register('priority')}
+                />
+                <span
+                  className={cn(
+                    'flex h-11 items-center justify-center rounded-lg text-sm font-medium text-muted transition',
+                    'peer-checked:bg-surface peer-checked:text-ink peer-checked:shadow-sm',
+                    'peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent',
+                  )}
+                >
+                  {PRIORITY_LABELS[priority]}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {isAdmin && task && (
+          <TextAreaField
+            label="Reason (optional)"
+            hint="Recorded in the admin audit log. Members never see it."
+            rows={2}
+            error={errors.reason?.message}
+            {...register('reason')}
+          />
+        )}
+
+        <div className="sticky bottom-[calc(-1*max(1.25rem,env(safe-area-inset-bottom)))] -mx-5 -mb-[max(1.25rem,env(safe-area-inset-bottom))] flex gap-2 border-t border-line bg-surface px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+          <Button variant="secondary" className="flex-1" onClick={onCancel} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" className="flex-1" loading={busy}>
+            {task ? 'Save changes' : 'Add task'}
+          </Button>
+        </div>
+      </form>
+
+      {/* Outside the form on purpose: a dialog has its own form, and forms cannot nest. */}
       <PromptDialog
         open={pending !== null}
         onClose={() => setPending(null)}
         title="Change who needs to finish this?"
-        description={
-          task && pending ? modeChangeExplanation(task, pending.assignmentMode) : ''
-        }
+        description={task && pending ? modeChangeExplanation(task, pending.assignmentMode) : ''}
         confirmLabel="Change it"
         loading={update.isPending}
         onConfirm={() => pending && send(pending, true)}
       />
-    </form>
+    </>
   )
 }

@@ -25,7 +25,7 @@ const TABS = [
   { value: 'overview', label: 'Overview' },
   { value: 'tasks', label: 'Tasks' },
   { value: 'members', label: 'Members' },
-  { value: 'history', label: 'Admin history' },
+  { value: 'history', label: 'History' },
 ] as const
 
 type Tab = (typeof TABS)[number]['value']
