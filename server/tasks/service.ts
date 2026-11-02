@@ -1,216 +1,173 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm'
-import type { PgUpdateSetSource } from 'drizzle-orm/pg-core'
+import { and, eq } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { createTaskSchema, updateTaskSchema } from '../../shared/schemas.js'
-import type { ActivityDto, TaskDto } from '../../shared/types.js'
+import type { TaskDto } from '../../shared/types.js'
+import { actorRef, type ReadScope, type Scope } from '../actors.js'
 import type { Database } from '../db/client.js'
-import { taskActivity, tasks } from '../db/schema.js'
+import { taskAssignees, tasks } from '../db/schema.js'
 import { ApiError } from '../errors.js'
-import { assertActiveMember } from '../members/service.js'
+import { recordActivity, type ActivityEvent } from './activity.js'
+import { applyAssignmentChange } from './assignment.js'
+import { loadTask, loadTasks } from './dto.js'
+import {
+  activeAssignees,
+  assignedAtFor,
+  lockTask,
+  requireActiveMembers,
+  requireReason,
+  saveTask,
+  type TaskRow,
+  type TaskSet,
+} from './internal.js'
 
-type TaskRow = typeof tasks.$inferSelect
-type TaskChanges = Partial<typeof tasks.$inferInsert>
+export { editNote, clearNote, listRevisions } from './notes.js'
+export { reopenTask, setAssigneeStatus } from './progress.js'
+export { listActivity } from './activity.js'
 
-export function toTaskDto(task: TaskRow): TaskDto {
-  return {
-    id: task.id,
-    title: task.title,
-    description: task.description,
-    status: task.status,
-    priority: task.priority,
-    assignedToMemberId: task.assignedToMemberId,
-    dueDate: task.dueDate,
-    createdByMemberId: task.createdByMemberId,
-    createdAt: task.createdAt.toISOString(),
-    updatedByMemberId: task.updatedByMemberId,
-    updatedAt: task.updatedAt.toISOString(),
-    version: task.version,
-    completedByMemberId: task.completedByMemberId,
-    completedAt: task.completedAt?.toISOString() ?? null,
-  }
+export function listTasks(db: Database, scope: ReadScope): Promise<TaskDto[]> {
+  return loadTasks(db, scope.projectId, scope.viewer)
 }
 
-function toActivityDto(row: typeof taskActivity.$inferSelect): ActivityDto {
-  return {
-    id: row.id,
-    taskId: row.taskId,
-    memberId: row.memberId,
-    action: row.action,
-    fromStatus: row.fromStatus,
-    toStatus: row.toStatus,
-    createdAt: row.createdAt.toISOString(),
-  }
+export function getTask(db: Database, scope: ReadScope, taskId: string): Promise<TaskDto> {
+  return loadTask(db, scope.projectId, scope.viewer, taskId)
 }
 
-/** Every task lookup goes through here: the project comes from the session, never the client. */
-function scoped(projectId: string, taskId: string) {
-  return and(eq(tasks.id, taskId), eq(tasks.projectId, projectId))
-}
-
-export async function listTasks(db: Database, projectId: string): Promise<TaskDto[]> {
-  const rows = await db.query.tasks.findMany({
-    where: eq(tasks.projectId, projectId),
-    orderBy: [desc(tasks.createdAt), desc(tasks.id)],
-  })
-  return rows.map(toTaskDto)
-}
-
-export async function getTask(db: Database, projectId: string, taskId: string): Promise<TaskDto> {
-  const row = await db.query.tasks.findFirst({ where: scoped(projectId, taskId) })
-  if (!row) throw new ApiError('TASK_NOT_FOUND')
-  return toTaskDto(row)
-}
-
+/** A task starts with its assignees (at least one) all To Do, in the chosen completion mode. */
 export async function createTask(
   db: Database,
-  projectId: string,
-  actorId: string,
+  scope: Scope,
   input: z.output<typeof createTaskSchema>,
 ): Promise<TaskDto> {
-  return db.transaction(async (tx) => {
-    if (input.assignedToMemberId) {
-      await assertActiveMember(tx, projectId, input.assignedToMemberId)
-    }
+  const assigneeIds = [
+    ...new Set(input.assigneeIds ?? (input.assignedToMemberId ? [input.assignedToMemberId] : [])),
+  ]
+
+  const taskId = await db.transaction(async (tx) => {
+    const names = await requireActiveMembers(tx, scope.projectId, assigneeIds)
+    const ref = actorRef(scope.actor)
 
     const [row] = await tx
       .insert(tasks)
       .values({
-        projectId,
+        projectId: scope.projectId,
         title: input.title,
         description: input.description ?? null,
         priority: input.priority,
-        assignedToMemberId: input.assignedToMemberId ?? null,
+        assignmentMode: input.assignmentMode,
         dueDate: input.dueDate ?? null,
-        createdByMemberId: actorId,
-        updatedByMemberId: actorId,
+        assignedToMemberId: assigneeIds[0] ?? null,
+        createdByMemberId: ref.memberId,
+        createdByAdminId: ref.adminId,
+        updatedByMemberId: ref.memberId,
+        updatedByAdminId: ref.adminId,
       })
       .returning()
     if (!row) throw new Error('Task insert returned no row')
 
-    await tx
-      .insert(taskActivity)
-      .values({ projectId, taskId: row.id, memberId: actorId, action: 'created' })
+    await tx.insert(taskAssignees).values(
+      assigneeIds.map((memberId, index) => ({
+        projectId: scope.projectId,
+        taskId: row.id,
+        memberId,
+        assignedAt: assignedAtFor(index),
+        assignedByMemberId: ref.memberId,
+        assignedByAdminId: ref.adminId,
+        updatedByMemberId: ref.memberId,
+        updatedByAdminId: ref.adminId,
+      })),
+    )
 
-    return toTaskDto(row)
+    await recordActivity(tx, scope, row.id, [
+      { action: 'created', details: { toMode: input.assignmentMode } },
+      ...assigneeIds.map((memberId) => ({
+        action: 'assignee_added' as const,
+        subject: { memberId, name: names.get(memberId) ?? '' },
+      })),
+    ])
+    return row.id
   })
+
+  return loadTask(db, scope.projectId, scope.actor.type, taskId)
 }
 
-/** Works out what an update actually changes, so no-op saves leave no trace. */
-function diffTask(current: TaskRow, input: z.output<typeof updateTaskSchema>) {
-  const fields: TaskChanges = {}
-  let detailsChanged = false
-
-  if (input.title !== undefined && input.title !== current.title) {
-    fields.title = input.title
-    detailsChanged = true
-  }
+/** Works out what a details edit actually changes, so no-op saves leave no trace. */
+function diffDetails(current: TaskRow, input: z.output<typeof updateTaskSchema>): TaskSet {
+  const set: TaskSet = {}
+  if (input.title !== undefined && input.title !== current.title) set.title = input.title
   if (input.description !== undefined && input.description !== current.description) {
-    fields.description = input.description
-    detailsChanged = true
+    set.description = input.description
   }
-  if (input.priority !== undefined && input.priority !== current.priority) {
-    fields.priority = input.priority
-    detailsChanged = true
-  }
-  if (input.assignedToMemberId !== undefined && input.assignedToMemberId !== current.assignedToMemberId) {
-    fields.assignedToMemberId = input.assignedToMemberId
-    detailsChanged = true
-  }
-  if (input.dueDate !== undefined && input.dueDate !== current.dueDate) {
-    fields.dueDate = input.dueDate
-    detailsChanged = true
-  }
-
-  const statusChanged = input.status !== undefined && input.status !== current.status
-  return { fields, detailsChanged, statusChanged }
+  if (input.priority !== undefined && input.priority !== current.priority) set.priority = input.priority
+  if (input.dueDate !== undefined && input.dueDate !== current.dueDate) set.dueDate = input.dueDate
+  return set
 }
 
 /**
- * Optimistic concurrency: the caller states which version it read. If someone
- * else has changed the task since, nothing is written and the result is
- * TASK_CONFLICT (409). The UPDATE repeats the version check in its WHERE
- * clause, so even a race between the read and the write cannot overwrite.
+ * Edits the task: its details, who is assigned, and who must complete it. A stale
+ * `expectedVersion` returns 409 and writes nothing. Everything (assignee rows, status
+ * recalculation, history) commits together or not at all.
  */
 export async function updateTask(
   db: Database,
-  projectId: string,
-  actorId: string,
+  scope: Scope,
   taskId: string,
   input: z.output<typeof updateTaskSchema>,
 ): Promise<TaskDto> {
-  return db.transaction(async (tx) => {
-    const current = await tx.query.tasks.findFirst({ where: scoped(projectId, taskId) })
-    if (!current) throw new ApiError('TASK_NOT_FOUND')
-    if (current.version !== input.expectedVersion) throw new ApiError('TASK_CONFLICT')
+  await db.transaction(async (tx) => {
+    const task = await lockTask(tx, scope.projectId, taskId)
+    if (task.version !== input.expectedVersion) throw new ApiError('TASK_CONFLICT')
 
-    const { fields, detailsChanged, statusChanged } = diffTask(current, input)
-    if (!detailsChanged && !statusChanged) return toTaskDto(current)
+    const current = await activeAssignees(tx, scope.projectId, taskId)
+    const desired =
+      input.assigneeIds ?? (input.assignedToMemberId ? [input.assignedToMemberId] : undefined)
+    const currentIds = new Set(current.map((row) => row.memberId))
 
-    // Moving to a new assignee needs an active member; keeping a removed one is fine.
-    if (fields.assignedToMemberId) {
-      await assertActiveMember(tx, projectId, fields.assignedToMemberId)
+    const detailSet = diffDetails(task, input)
+    const change = {
+      add: desired ? desired.filter((id) => !currentIds.has(id)) : [],
+      remove: desired ? [...currentIds].filter((id) => !desired.includes(id)) : [],
+      mode: input.assignmentMode,
+      confirmModeChange: input.confirmModeChange,
     }
 
-    const toStatus = input.status ?? current.status
-    const completion: PgUpdateSetSource<typeof tasks> = !statusChanged
-      ? {}
-      : toStatus === 'completed'
-        ? { completedByMemberId: actorId, completedAt: sql`now()` }
-        : { completedByMemberId: null, completedAt: null }
+    const modeChanged = input.assignmentMode !== undefined && input.assignmentMode !== task.assignmentMode
+    const assignmentTouched = change.add.length > 0 || change.remove.length > 0 || modeChanged
+    const detailsTouched = Object.keys(detailSet).length > 0
+    if (!assignmentTouched && !detailsTouched) return
 
-    const [updated] = await tx
-      .update(tasks)
-      .set({
-        ...fields,
-        ...(statusChanged ? { status: toStatus } : {}),
-        ...completion,
-        version: sql`${tasks.version} + 1`,
-        updatedAt: sql`now()`,
-        updatedByMemberId: actorId,
-      })
-      .where(and(scoped(projectId, taskId), eq(tasks.version, input.expectedVersion)))
-      .returning()
-    if (!updated) throw new ApiError('TASK_CONFLICT')
+    const reason = scope.actor.type === 'admin' ? input.reason : undefined
+    const events: ActivityEvent[] = []
+    const set: TaskSet = { ...detailSet }
+    let mirror: string | null | undefined
 
-    const activity: (typeof taskActivity.$inferInsert)[] = []
-    if (detailsChanged) {
-      activity.push({ projectId, taskId, memberId: actorId, action: 'updated' })
+    if (assignmentTouched) {
+      const result = await applyAssignmentChange(tx, scope, task, current, change)
+      Object.assign(set, result.set)
+      events.push(...result.events)
+      mirror = result.mirror
     }
-    if (statusChanged) {
-      activity.push({
-        projectId,
-        taskId,
-        memberId: actorId,
-        action: 'status_changed',
-        fromStatus: current.status,
-        toStatus,
-      })
+    if (detailsTouched) {
+      events.unshift({ action: 'updated', details: reason ? { reason } : null })
     }
-    await tx.insert(taskActivity).values(activity)
 
-    return toTaskDto(updated)
+    await saveTask(tx, scope, task, set, mirror)
+    await recordActivity(tx, scope, taskId, events)
   })
+  return loadTask(db, scope.projectId, scope.actor.type, taskId)
 }
 
-export async function deleteTask(db: Database, projectId: string, taskId: string): Promise<void> {
-  const deleted = await db.delete(tasks).where(scoped(projectId, taskId)).returning({ id: tasks.id })
-  if (deleted.length === 0) throw new ApiError('TASK_NOT_FOUND')
-}
-
-export async function listActivity(
+/** Removes the task and its history. Members may; an admin must say why. */
+export async function deleteTask(
   db: Database,
-  projectId: string,
+  scope: Scope,
   taskId: string,
-): Promise<ActivityDto[]> {
-  const task = await db.query.tasks.findFirst({
-    where: scoped(projectId, taskId),
-    columns: { id: true },
-  })
-  if (!task) throw new ApiError('TASK_NOT_FOUND')
-
-  const rows = await db.query.taskActivity.findMany({
-    where: and(eq(taskActivity.taskId, taskId), eq(taskActivity.projectId, projectId)),
-    orderBy: [asc(taskActivity.createdAt), asc(taskActivity.id)],
-  })
-  return rows.map(toActivityDto)
+  options: { reason?: string | undefined } = {},
+): Promise<{ id: string; title: string }> {
+  requireReason(scope.actor, options.reason)
+  const [deleted] = await db
+    .delete(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.projectId, scope.projectId)))
+    .returning({ id: tasks.id, title: tasks.title })
+  if (!deleted) throw new ApiError('TASK_NOT_FOUND')
+  return deleted
 }

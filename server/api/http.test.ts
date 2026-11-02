@@ -43,7 +43,7 @@ describe('request safety', () => {
   it('rejects oversized bodies and malformed JSON', async () => {
     const client = new TestClient()
     const huge = await client.post<ApiErrorBody>('/api/session', {
-      rawBody: JSON.stringify({ code: 'x'.repeat(40_000) }),
+      rawBody: JSON.stringify({ code: 'x'.repeat(200_000) }),
     })
     expect(huge.status).toBe(413)
 
@@ -64,10 +64,38 @@ describe('request safety', () => {
   })
 })
 
+describe('routing', () => {
+  it('answers unknown paths with 404 and wrong methods with 405 and an Allow header', async () => {
+    const { client } = await createCollabo()
+    const missing = await client.get<ApiErrorBody>('/api/nope')
+    expect(missing.status).toBe(404)
+    expect(missing.body.error.code).toBe('NOT_FOUND')
+
+    const wrong = await client.send<ApiErrorBody>('PATCH', '/api/members')
+    expect(wrong.status).toBe(405)
+    expect(wrong.body.error.code).toBe('METHOD_NOT_ALLOWED')
+    expect(wrong.headers.get('allow')).toBe('GET, POST')
+  })
+
+  it('serves every V1 URL', async () => {
+    const { client } = await createCollabo()
+    for (const [method, path] of [
+      ['GET', '/api/project'],
+      ['GET', '/api/members'],
+      ['GET', '/api/tasks'],
+    ] as const) {
+      expect((await client.send(method, path)).status, path).toBe(200)
+    }
+  })
+})
+
 describe('error contract', () => {
   it('uses one { error: { code, message } } shape, with field details for validation', async () => {
     const { client } = await createCollabo()
-    const result = await client.post<ApiErrorBody>('/api/tasks', { body: { title: '' } })
+    const { creator } = await createCollabo()
+    const result = await client.post<ApiErrorBody>('/api/tasks', {
+      body: { title: '', assigneeIds: [creator.id] },
+    })
     expect(result.body).toEqual({
       error: {
         code: 'VALIDATION_ERROR',

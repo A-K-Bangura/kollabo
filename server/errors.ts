@@ -7,12 +7,30 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   SESSION_INVALID: 401,
   FORBIDDEN_ORIGIN: 403,
   PROJECT_NOT_FOUND: 404,
+  PROJECT_SUSPENDED: 423,
+  PROJECT_STATE_INVALID: 409,
   MEMBER_REQUIRED: 400,
   MEMBER_NOT_FOUND: 404,
   MEMBER_EXISTS: 409,
   LAST_MEMBER: 409,
+  MEMBER_HAS_OPEN_TASKS: 409,
+  NOT_ASSIGNED: 403,
+  LAST_ASSIGNEE: 422,
+  TASK_COMPLETED: 409,
+  MODE_CHANGE_NEEDS_CONFIRMATION: 409,
+  REOPEN_NOT_APPLICABLE: 422,
+  NOTE_EMPTY: 422,
+  NOTE_CONFLICT: 409,
+  ASSIGNEE_CONFLICT: 409,
+  REASON_REQUIRED: 422,
   TASK_NOT_FOUND: 404,
   TASK_CONFLICT: 409,
+  ADMIN_REQUIRED: 401,
+  ADMIN_FORBIDDEN: 403,
+  MFA_REQUIRED: 403,
+  PASSWORD_CHANGE_REQUIRED: 403,
+  ADMIN_NOT_CONFIGURED: 503,
+  ADMIN_EXISTS: 409,
   VALIDATION_ERROR: 400,
   PAYLOAD_TOO_LARGE: 413,
   UNSUPPORTED_MEDIA_TYPE: 415,
@@ -23,7 +41,8 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
 
 interface ApiErrorOptions {
   message?: string
-  details?: Record<string, string[]>
+  /** Field messages for validation errors, or structured context (such as the tasks blocking a change). */
+  details?: Record<string, unknown>
   headers?: Record<string, string>
 }
 
@@ -31,7 +50,7 @@ interface ApiErrorOptions {
 export class ApiError extends Error {
   readonly code: ApiErrorCode
   readonly status: number
-  readonly details: Record<string, string[]> | undefined
+  readonly details: Record<string, unknown> | undefined
   readonly headers: Record<string, string>
 
   constructor(code: ApiErrorCode, options: ApiErrorOptions = {}) {

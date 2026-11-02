@@ -12,13 +12,13 @@ import type {
 export class ApiClientError extends Error {
   readonly status: number
   readonly code: ApiErrorCode | 'NETWORK'
-  readonly details: Record<string, string[]> | undefined
+  readonly details: Record<string, unknown> | undefined
 
   constructor(
     status: number,
     code: ApiErrorCode | 'NETWORK',
     message: string,
-    details?: Record<string, string[]>,
+    details?: Record<string, unknown>,
   ) {
     super(message)
     this.name = 'ApiClientError'

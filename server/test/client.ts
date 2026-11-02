@@ -1,31 +1,9 @@
 import { randomInt } from 'node:crypto'
-import * as memberRoute from '../../api/members/[id].js'
-import * as membersRoute from '../../api/members/index.js'
-import * as projectRoute from '../../api/project/index.js'
-import * as regenerateRoute from '../../api/project/regenerate-code.js'
-import * as projectsRoute from '../../api/projects.js'
-import * as sessionRoute from '../../api/session.js'
-import * as activityRoute from '../../api/tasks/[id]/activity.js'
-import * as taskRoute from '../../api/tasks/[id].js'
-import * as tasksRoute from '../../api/tasks/index.js'
+import * as entry from '../../api/[...path].js'
 import { MEMBER_HEADER } from '../../shared/constants.js'
 import type { CreateProjectResponse, MemberDto, TaskDto } from '../../shared/types.js'
-import { matchPath } from '../http.js'
 
-type RouteHandler = (request: Request) => Promise<Response>
-type RouteModule = Partial<Record<'GET' | 'POST' | 'PATCH' | 'DELETE', RouteHandler>>
-
-const ROUTES: { pattern: string; module: RouteModule }[] = [
-  { pattern: '/api/projects', module: projectsRoute },
-  { pattern: '/api/session', module: sessionRoute },
-  { pattern: '/api/project', module: projectRoute },
-  { pattern: '/api/project/regenerate-code', module: regenerateRoute },
-  { pattern: '/api/members', module: membersRoute },
-  { pattern: '/api/members/:id', module: memberRoute },
-  { pattern: '/api/tasks', module: tasksRoute },
-  { pattern: '/api/tasks/:id', module: taskRoute },
-  { pattern: '/api/tasks/:id/activity', module: activityRoute },
-]
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export interface ApiResult<T = unknown> {
   status: number
@@ -69,14 +47,10 @@ export class TestClient {
   }
 
   async send<T = unknown>(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    method: Method,
     path: string,
     options: SendOptions = {},
   ): Promise<ApiResult<T>> {
-    const route = ROUTES.find((candidate) => matchPath(candidate.pattern, path.split('?')[0] ?? path))
-    const handler = route?.module[method]
-    if (!handler) throw new Error(`No test route for ${method} ${path}`)
-
     const headers = new Headers({
       'x-real-ip': this.ip,
       ...(options.body !== undefined || options.rawBody !== undefined
@@ -90,7 +64,8 @@ export class TestClient {
     if (actor) headers.set(MEMBER_HEADER, actor)
 
     const body = options.rawBody ?? (options.body === undefined ? undefined : JSON.stringify(options.body))
-    const response = await handler(
+    // The real Vercel entry point: one function serving every /api route.
+    const response = await entry[method](
       new Request(`https://collabo.test${path}`, { method, headers, body }),
     )
 
@@ -116,16 +91,22 @@ export class TestClient {
 
   get = <T>(path: string, options?: SendOptions) => this.send<T>('GET', path, options)
   post = <T>(path: string, options?: SendOptions) => this.send<T>('POST', path, options)
+  put = <T>(path: string, options?: SendOptions) => this.send<T>('PUT', path, options)
   patch = <T>(path: string, options?: SendOptions) => this.send<T>('PATCH', path, options)
   delete = <T>(path: string, options?: SendOptions) => this.send<T>('DELETE', path, options)
 }
 
 export interface Collabo {
+  /** Signed in, acting as the creator. */
   client: TestClient
   projectId: string
   code: string
   creator: MemberDto
   members: MemberDto[]
+  /** A member by name. */
+  member: (name: string) => MemberDto
+  /** A second browser in the same Collabo, acting as the named member. */
+  as: (name: string) => TestClient
 }
 
 /** Creates a Collabo through the public API; the returned client is signed in as its creator. */
@@ -146,7 +127,18 @@ export async function createCollabo(
   const creator = members.find((member) => member.id === creatorMemberId)
   if (!creator) throw new Error('creator missing from members')
   client.memberId = creator.id
-  return { client, projectId: project.id, code: accessCode, creator, members }
+
+  const member = (name: string): MemberDto => {
+    const found = members.find((candidate) => candidate.name === name)
+    if (!found) throw new Error(`No member named ${name}`)
+    return found
+  }
+  const as = (name: string): TestClient => {
+    const copy = client.clone()
+    copy.memberId = member(name).id
+    return copy
+  }
+  return { client, projectId: project.id, code: accessCode, creator, members, member, as }
 }
 
 /** Signs a fresh browser in with a code, as a teammate would. */
@@ -161,8 +153,13 @@ export async function createTask(
   client: TestClient,
   input: Record<string, unknown> = {},
 ): Promise<TaskDto> {
+  // Every task needs at least one assignee: default to the creator.
+  const assignees =
+    'assigneeIds' in input || 'assignedToMemberId' in input
+      ? {}
+      : { assigneeIds: client.memberId ? [client.memberId] : [] }
   const result = await client.post<{ task: TaskDto }>('/api/tasks', {
-    body: { title: 'Finish landing page', ...input },
+    body: { title: 'Finish landing page', ...assignees, ...input },
   })
   if (result.status !== 201) throw new Error(`createTask failed: ${JSON.stringify(result.body)}`)
   return result.body.task
