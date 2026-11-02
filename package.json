@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "admin:create": "tsx scripts/create-admin.ts",
+    "db:v2:verify": "tsx scripts/db-verify.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

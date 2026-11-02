@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { hasFailures, verifyV2 } from './verify.js'
 
 /**
  * Proves the V1 -> V2 upgrade on real data: build a database exactly as V1 left it
@@ -189,6 +190,17 @@ describe('V1 -> V2 migration with existing data', () => {
     await expect(client.query('delete from admin_audit_logs')).rejects.toThrow(/append-only/)
     await expect(client.query('truncate admin_audit_logs')).rejects.toThrow(/append-only/)
     expect((await rows('select count(*)::int as n from admin_audit_logs'))[0]?.n).toBe(1)
+  })
+
+  it('passes the post-migration health check, flagging only what V1 data genuinely needed repair', async () => {
+    const checks = await verifyV2(drizzle(client) as never)
+    expect(hasFailures(checks)).toBe(false)
+    const find = (name: string) => checks.find((check) => check.name.startsWith(name))
+    // Seeded V1 data has one task nobody was assigned to, and one whose only assignee was removed.
+    expect(find('Tasks with nobody assigned')).toMatchObject({ count: 1, severity: 'warning' })
+    expect(find('Open tasks whose assignees')).toMatchObject({ count: 1, severity: 'warning' })
+    expect(find('Rows: tasks')?.count).toBe(6)
+    expect(find('Active administrators')).toMatchObject({ count: 0, severity: 'warning' })
   })
 
   it('still accepts V1-shaped writes, so an application rollback keeps working', async () => {
