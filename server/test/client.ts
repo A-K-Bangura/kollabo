@@ -38,6 +38,10 @@ export class TestClient {
     this.jar.set('collabo_session', value)
   }
 
+  setCookie(name: string, value: string): void {
+    this.jar.set(name, value)
+  }
+
   /** A second browser carrying a copy of this browser's cookie. */
   clone(): TestClient {
     const copy = new TestClient()

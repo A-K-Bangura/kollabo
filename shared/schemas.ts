@@ -1,6 +1,12 @@
 import { z } from 'zod'
 import { normalizeAccessCode } from './access-code.js'
-import { ASSIGNMENT_MODES, LIMITS, TASK_PRIORITIES, TASK_STATUSES } from './constants.js'
+import {
+  ASSIGNMENT_MODES,
+  LIMITS,
+  PROJECT_STATUSES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+} from './constants.js'
 
 const requiredText = (label: string, max: number) =>
   z
@@ -213,6 +219,47 @@ export const historyQuerySchema = z.object({
 export const pageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(LIMITS.pageSize),
   page: z.coerce.number().int().min(1).default(1),
+})
+
+/* -------------------------------------------------------------------------- */
+/* Platform administration                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** `?search=&status=&sort=` for the admin project directory. */
+export const adminProjectsQuerySchema = pageQuerySchema.extend({
+  search: z.string().trim().max(80).optional(),
+  status: z.enum(['all', ...PROJECT_STATUSES]).default('all'),
+  sort: z.enum(['activity', 'name', 'created', 'size']).default('activity'),
+})
+
+/** `?projectId=&adminId=&action=` for the audit log. */
+export const adminAuditQuerySchema = pageQuerySchema.extend({
+  projectId: uuidSchema.optional(),
+  adminId: z.string().trim().min(1).max(64).optional(),
+  action: z.string().trim().min(1).max(64).optional(),
+})
+
+/** Actions that must always be explained. */
+export const requiredReasonBodySchema = z.object({ reason: reasonSchema })
+
+/** Actions where explaining is optional (it is recorded when given). */
+export const optionalReasonBodySchema = z.object({ reason: reasonSchema.optional() })
+
+export const adminRenameProjectSchema = z.object({
+  name: projectNameSchema,
+  reason: reasonSchema.optional(),
+})
+
+export const adminEmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .max(254, 'Email must be 254 characters or fewer')
+  .pipe(z.email('Enter a valid email address'))
+
+export const createAdminSchema = z.object({
+  name: personNameSchema,
+  email: adminEmailSchema,
 })
 
 /** What the browser sends (before defaults and transforms are applied). */

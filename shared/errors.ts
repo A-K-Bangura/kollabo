@@ -30,6 +30,8 @@ export const API_ERROR_MESSAGES = {
   TASK_NOT_FOUND: 'That task could not be found. It may have been deleted.',
   TASK_CONFLICT: 'This task has changed since you last refreshed. Refresh it before editing.',
   ADMIN_REQUIRED: 'Sign in as a platform administrator to continue.',
+  INVALID_CREDENTIALS: 'That email and password do not match an administrator account.',
+  INVALID_TWO_FACTOR_CODE: 'That code is not valid. Check your authenticator app and try again.',
   ADMIN_FORBIDDEN: 'This administrator account is not allowed to do that.',
   MFA_REQUIRED: 'Set up two-factor authentication to use the admin area.',
   PASSWORD_CHANGE_REQUIRED: 'Choose a new password before continuing.',

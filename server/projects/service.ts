@@ -97,17 +97,21 @@ export async function regenerateAccessCode(
   for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt += 1) {
     const accessCode = generateAccessCode()
     try {
-      const [row] = await db
-        .update(projects)
-        .set({
-          accessCodeHash: hashAccessCode(accessCode),
-          sessionVersion: sql`${projects.sessionVersion} + 1`,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(projects.id, projectId))
-        .returning({ sessionVersion: projects.sessionVersion })
-      if (!row) throw new ApiError('PROJECT_NOT_FOUND')
-      return { accessCode, sessionVersion: row.sessionVersion }
+      // Inside its own (nested) transaction so a hash collision can be retried even when
+      // the caller is already in a transaction, where a failed statement would poison it.
+      return await db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(projects)
+          .set({
+            accessCodeHash: hashAccessCode(accessCode),
+            sessionVersion: sql`${projects.sessionVersion} + 1`,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(projects.id, projectId))
+          .returning({ sessionVersion: projects.sessionVersion })
+        if (!row) throw new ApiError('PROJECT_NOT_FOUND')
+        return { accessCode, sessionVersion: row.sessionVersion }
+      })
     } catch (error) {
       if (pgErrorCode(error) === UNIQUE_VIOLATION && attempt < CODE_ATTEMPTS - 1) continue
       throw error
