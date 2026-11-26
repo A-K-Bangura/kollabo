@@ -2,25 +2,36 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { LIMITS } from '@shared/constants'
 import { personNameSchema, projectNameSchema } from '@shared/schemas'
 import type { CreateProjectResponse } from '@shared/types'
-import { ArrowLeft, Check, Copy, Plus, X } from 'lucide-react'
+import { ArrowLeft, Check, Copy } from 'lucide-react'
 import { useState } from 'react'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { useForm } from 'react-hook-form'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { Button, IconButton } from '@/components/ui/Button'
-import { TextField } from '@/components/ui/fields'
+import { Button } from '@/components/ui/Button'
+import { TextAreaField, TextField } from '@/components/ui/fields'
+import { parseNameList } from '@/features/team/names'
 import { useCreateProject, useReportError } from '@/features/session/hooks'
 import { copyToClipboard } from '@/lib/clipboard'
 
 const formSchema = z.object({
   name: projectNameSchema,
   creatorName: personNameSchema,
-  teammates: z.array(
-    z.object({
-      name: z.string().trim().max(LIMITS.personName, `Name must be ${LIMITS.personName} characters or fewer`),
-    }),
-  ),
+  /** Pasted or typed: one name per line, or separated by commas. */
+  teammates: z.string().superRefine((text, context) => {
+    const { names, tooLong } = parseNameList(text)
+    if (tooLong.length > 0) {
+      context.addIssue({
+        code: 'custom',
+        message: `“${tooLong[0]!.slice(0, 20)}…” is too long. Names can be ${LIMITS.personName} characters at most.`,
+      })
+    } else if (names.length > LIMITS.membersPerRequest) {
+      context.addIssue({
+        code: 'custom',
+        message: `Add up to ${LIMITS.membersPerRequest} people here. You can add more from Team afterwards.`,
+      })
+    }
+  }),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -79,18 +90,17 @@ export function CreateCollaboPage() {
   const report = useReportError()
   const [created, setCreated] = useState<CreateProjectResponse | null>(null)
 
-  const { register, control, handleSubmit, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: { name: '', creatorName: '', teammates: [] },
+    defaultValues: { name: '', creatorName: '', teammates: '' },
   })
-  const teammates = useFieldArray({ control, name: 'teammates' })
 
   const onSubmit = handleSubmit((values) => {
     create.mutate(
       {
         name: values.name,
         creatorName: values.creatorName,
-        memberNames: values.teammates.map((teammate) => teammate.name).filter(Boolean),
+        memberNames: parseNameList(values.teammates).names,
       },
       { onSuccess: setCreated, onError: report },
     )
@@ -131,39 +141,14 @@ export function CreateCollaboPage() {
               {...register('creatorName')}
             />
 
-            <fieldset className="flex flex-col gap-3">
-              <legend className="mb-1 text-sm font-medium">Teammates (optional)</legend>
-              <p className="-mt-1 text-sm text-muted">You can always add people later.</p>
-              {teammates.fields.map((field, index) => (
-                <div key={field.id} className="flex items-start gap-2">
-                  <div className="flex-1">
-                    <TextField
-                      label={`Teammate ${index + 1}`}
-                      autoComplete="off"
-                      error={formState.errors.teammates?.[index]?.name?.message}
-                      {...register(`teammates.${index}.name`)}
-                    />
-                  </div>
-                  <IconButton
-                    label={`Remove teammate ${index + 1}`}
-                    className="mt-7"
-                    onClick={() => teammates.remove(index)}
-                  >
-                    <X className="size-5" aria-hidden />
-                  </IconButton>
-                </div>
-              ))}
-              {teammates.fields.length < LIMITS.extraMembersOnCreate && (
-                <Button
-                  variant="ghost"
-                  className="self-start"
-                  onClick={() => teammates.append({ name: '' }, { shouldFocus: true })}
-                >
-                  <Plus className="size-4" aria-hidden />
-                  Add teammate
-                </Button>
-              )}
-            </fieldset>
+            <TextAreaField
+              label="Teammates (optional)"
+              hint="One name per line, or separated by commas. Paste a whole list if you like. You can always add people later."
+              rows={4}
+              autoComplete="off"
+              error={formState.errors.teammates?.message}
+              {...register('teammates')}
+            />
 
             <Button type="submit" size="lg" loading={create.isPending} className="mt-2">
               Create Collabo

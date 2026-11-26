@@ -1,5 +1,6 @@
 import {
   differenceInCalendarDays,
+  formatDistanceToNowStrict,
   differenceInMinutes,
   format,
   isSameDay,
@@ -55,4 +56,9 @@ export function formatRefreshed(timestamp: number, now: number = Date.now()): st
   if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`
   const date = new Date(timestamp)
   return format(date, isSameDay(date, now) ? 'h:mm a' : 'MMM d, h:mm a')
+}
+
+/** "5 minutes ago", "3 days ago": for admin lists where exact times matter less than recency. */
+export function relativeTime(iso: string): string {
+  return `${formatDistanceToNowStrict(parseISO(iso))} ago`
 }

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { personNameSchema } from '@shared/schemas'
-import { UserPlus } from 'lucide-react'
+import { Search, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router'
@@ -17,6 +17,10 @@ import { useSessionState } from './sessionState'
 
 const nameSchema = z.object({ name: personNameSchema })
 
+/** Large teams: search, and draw the list in pages. */
+const PAGE = 50
+const SEARCH_FROM = 8
+
 /**
  * "Who are you?" tags your changes with your name. It is attribution between
  * people who trust each other, not a login, and the screen says so.
@@ -30,8 +34,13 @@ export function WhoAreYouPage() {
   const leave = useLeaveCollabo()
   const [picked, setPicked] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [query, setQuery] = useState('')
+  const [limit, setLimit] = useState(PAGE)
 
   const active = members.data?.filter((member) => member.isActive) ?? []
+  const needle = query.trim().toLowerCase()
+  const matching = needle ? active.filter((member) => member.name.toLowerCase().includes(needle)) : active
+  const visible = matching.slice(0, limit)
   const remembered = selection?.projectId === project.id ? selection.memberId : null
   const chosen = picked ?? (active.some((member) => member.id === remembered) ? remembered : null)
 
@@ -62,7 +71,7 @@ export function WhoAreYouPage() {
       <h1 className="text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">{project.name}</h1>
       <h2 className="mt-8 text-lg font-medium">Who are you?</h2>
       <p className="mt-1 text-sm text-muted">
-        This just puts your name on what you change. It isn’t a login.
+        This just puts your name on what you change. It isn’t a login, and nobody’s name is checked: anyone with the code could pick any name.
       </p>
 
       <div className="mt-5">
@@ -79,8 +88,25 @@ export function WhoAreYouPage() {
         {members.isSuccess && (
           <fieldset>
             <legend className="sr-only">Choose your name</legend>
+            {active.length > SEARCH_FROM && (
+              <div className="relative mb-3">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    setLimit(PAGE)
+                  }}
+                  aria-label="Search names"
+                  placeholder={`Search ${active.length} people`}
+                  autoComplete="off"
+                  className="h-11 w-full rounded-xl border border-line bg-surface pl-9 pr-3 text-base transition hover:border-muted/50"
+                />
+              </div>
+            )}
             <ul className="space-y-2">
-              {active.map((member) => (
+              {visible.map((member) => (
                 <li key={member.id}>
                   <label className="relative block">
                     <input
@@ -104,7 +130,15 @@ export function WhoAreYouPage() {
                   </label>
                 </li>
               ))}
+              {visible.length === 0 && (
+                <li className="py-4 text-center text-sm text-muted">Nobody matches “{query.trim()}”.</li>
+              )}
             </ul>
+            {matching.length > visible.length && (
+              <Button variant="ghost" size="sm" className="mt-2" onClick={() => setLimit((current) => current + PAGE)}>
+                Show more ({matching.length - visible.length} left)
+              </Button>
+            )}
           </fieldset>
         )}
       </div>

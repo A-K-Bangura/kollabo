@@ -56,7 +56,7 @@ function isDirectory(target: string): boolean {
   return existsSync(target) && statSync(target).isDirectory()
 }
 
-/** Maps URL segments onto api/ files: exact names first, then [param] names. */
+/** Maps URL segments onto api/ files: exact names first, then [param] and [...catchAll] names. */
 function resolveRoute(dir: string, segments: string[]): string | null {
   const [head, ...rest] = segments
   if (head === undefined) {
@@ -76,7 +76,10 @@ function resolveRoute(dir: string, segments: string[]): string | null {
   }
 
   for (const entry of readdirSync(dir)) {
-    const dynamic = /^\[[^\]]+\](\.ts)?$/.exec(entry)
+    const catchAll = /^\[\.\.\.[^\]]+\]\.ts$/.test(entry)
+    if (catchAll) return path.join(dir, entry) // matches this and every remaining segment
+
+    const dynamic = /^\[[^.\]][^\]]*\](\.ts)?$/.exec(entry)
     if (!dynamic) continue
     const full = path.join(dir, entry)
     if (dynamic[1]) {

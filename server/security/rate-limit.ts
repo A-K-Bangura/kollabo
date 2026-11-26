@@ -25,14 +25,37 @@ export const CREATE_PROJECT_POLICY: RateLimitPolicy = {
   windowSeconds: 60 * 60,
 }
 
+/** Wrong admin passwords per client. Only failures count. */
+export const ADMIN_SIGN_IN_POLICY: RateLimitPolicy = {
+  name: 'admin-sign-in',
+  maxAttempts: 10,
+  windowSeconds: 15 * 60,
+}
+
+/** Wrong admin passwords per account (by email), however many clients are guessing. */
+export const ADMIN_SIGN_IN_ACCOUNT_POLICY: RateLimitPolicy = {
+  name: 'admin-sign-in-account',
+  maxAttempts: 8,
+  windowSeconds: 15 * 60,
+}
+
+/** Wrong authenticator or backup codes per client. */
+export const ADMIN_MFA_POLICY: RateLimitPolicy = {
+  name: 'admin-mfa',
+  maxAttempts: 10,
+  windowSeconds: 15 * 60,
+}
+
 /**
- * Counters live in Postgres because serverless instances share no memory.
- * The client IP is only ever stored as a keyed hash.
+ * Counters live in Postgres because serverless instances share no memory. They are keyed
+ * by the client IP, or by a `subject` (such as an email address) when a policy needs to
+ * throttle an account rather than a client. Only a keyed hash is ever stored.
  */
-function bucketKey(policy: RateLimitPolicy, request: Request): string {
+function bucketKey(policy: RateLimitPolicy, request: Request, subject?: string): string {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
   const ip = request.headers.get('x-real-ip') ?? forwarded ?? 'unknown'
-  const digest = createHmac('sha256', getEnv().SESSION_SECRET).update(`rate:${ip}`).digest('hex')
+  const who = subject === undefined ? `ip:${ip}` : `subject:${subject.trim().toLowerCase()}`
+  const digest = createHmac('sha256', getEnv().SESSION_SECRET).update(`rate:${who}`).digest('hex')
   return `${policy.name}:${digest.slice(0, 32)}`
 }
 
@@ -47,11 +70,12 @@ export async function assertWithinLimit(
   db: Database,
   policy: RateLimitPolicy,
   request: Request,
+  subject?: string,
 ): Promise<void> {
   const [row] = await db
     .select({ attempts: rateLimits.attempts, windowStart: rateLimits.windowStart })
     .from(rateLimits)
-    .where(eq(rateLimits.key, bucketKey(policy, request)))
+    .where(eq(rateLimits.key, bucketKey(policy, request, subject)))
   if (!row || row.attempts < policy.maxAttempts) return
 
   const resetsAt = row.windowStart.getTime() + policy.windowSeconds * 1000
@@ -63,9 +87,10 @@ export async function recordAttempt(
   db: Database,
   policy: RateLimitPolicy,
   request: Request,
+  subject?: string,
 ): Promise<number> {
   const expired = sql`${rateLimits.windowStart} <= now() - make_interval(secs => ${policy.windowSeconds})`
-  const key = bucketKey(policy, request)
+  const key = bucketKey(policy, request, subject)
 
   const [row] = await db
     .insert(rateLimits)
@@ -90,7 +115,8 @@ export async function consumeAttempt(
   db: Database,
   policy: RateLimitPolicy,
   request: Request,
+  subject?: string,
 ): Promise<void> {
-  const attempts = await recordAttempt(db, policy, request)
+  const attempts = await recordAttempt(db, policy, request, subject)
   if (attempts > policy.maxAttempts) throw limited(policy.windowSeconds)
 }

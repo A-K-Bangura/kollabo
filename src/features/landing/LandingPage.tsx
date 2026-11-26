@@ -7,6 +7,7 @@ import { buttonStyles } from '@/components/ui/buttonStyles'
 import { FullScreenLoading } from '@/components/ui/feedback'
 import { LogoMark } from '@/components/ui/Logo'
 import { useEnterCode, useProjectQuery } from '@/features/session/hooks'
+import { isSuspendedError } from '@/lib/api'
 
 /** The front door: enter a code, or start a new Collabo. Nothing else. */
 export function LandingPage() {
@@ -20,6 +21,7 @@ export function LandingPage() {
 
   // Already inside a Collabo on this browser: carry straight on.
   if (project.isSuccess) return <Navigate to="/today" replace />
+  if (project.isError && isSuspendedError(project.error)) return <Navigate to="/suspended" replace />
   if (project.isPending) return <FullScreenLoading />
 
   const submit = (event: FormEvent) => {

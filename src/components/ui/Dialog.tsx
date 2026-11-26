@@ -143,3 +143,79 @@ export function ConfirmDialog({
     </ModalDialog>
   )
 }
+
+interface PromptDialogProps {
+  open: boolean
+  onClose: () => void
+  title: string
+  description?: string
+  confirmLabel: string
+  confirmVariant?: 'primary' | 'danger'
+  confirmDisabled?: boolean
+  /** Text of the dismiss button, or null for a dialog that can only be acknowledged. */
+  cancelLabel?: string | null
+  loading?: boolean
+  onConfirm: () => void
+  /** Form fields and notes shown between the description and the buttons. */
+  children?: ReactNode
+  /** Room for longer content such as lists of people. */
+  wide?: boolean
+}
+
+/**
+ * A centred dialog that asks for something: a note, a reason, a decision. It is a real
+ * <form>, so Enter confirms from a single-line field and the confirm button is the default.
+ */
+export function PromptDialog({
+  open,
+  onClose,
+  title,
+  description,
+  confirmLabel,
+  confirmVariant = 'primary',
+  confirmDisabled = false,
+  cancelLabel = 'Cancel',
+  loading = false,
+  onConfirm,
+  children,
+  wide = false,
+}: PromptDialogProps) {
+  const titleId = useId()
+  return (
+    <ModalDialog
+      open={open}
+      onClose={onClose}
+      variant="pop"
+      labelledBy={titleId}
+      className={cn(
+        'm-auto max-h-[90dvh] w-[calc(100%-2rem)] overflow-y-auto rounded-2xl border border-line bg-surface p-5 text-ink shadow-xl',
+        'backdrop:bg-black/40',
+        wide ? 'max-w-lg' : 'max-w-sm',
+      )}
+    >
+      <form
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (!confirmDisabled && !loading) onConfirm()
+        }}
+      >
+        <h2 id={titleId} className="text-lg font-semibold leading-snug [overflow-wrap:anywhere]">
+          {title}
+        </h2>
+        {description && <p className="mt-1.5 text-[15px] text-muted">{description}</p>}
+        {children && <div className="mt-4 flex flex-col gap-4">{children}</div>}
+        <div className="mt-5 flex justify-end gap-2">
+          {cancelLabel !== null && (
+            <Button variant="secondary" onClick={onClose} disabled={loading}>
+              {cancelLabel}
+            </Button>
+          )}
+          <Button type="submit" variant={confirmVariant} loading={loading} disabled={confirmDisabled}>
+            {confirmLabel}
+          </Button>
+        </div>
+      </form>
+    </ModalDialog>
+  )
+}

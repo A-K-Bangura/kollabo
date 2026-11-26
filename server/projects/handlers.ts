@@ -34,10 +34,13 @@ export const createSessionHandler: Handler = async ({ request, db }) => {
   await assertWithinLimit(db, ACCESS_CODE_POLICY, request)
 
   const project = await findProjectByCode(db, code)
-  if (!project) {
+  // A deleted project is indistinguishable from a wrong code. A suspended one is refused
+  // plainly: the person already holds a valid code, so there is nothing to protect.
+  if (!project || project.status === 'deleted') {
     await recordAttempt(db, ACCESS_CODE_POLICY, request)
     throw new ApiError('INVALID_CODE')
   }
+  if (project.status === 'suspended') throw new ApiError('PROJECT_SUSPENDED')
 
   const token = createSessionToken({ projectId: project.id, version: project.sessionVersion })
   return json({ project: toProjectDto(project) }, { cookies: [buildSessionCookie(token, request)] })

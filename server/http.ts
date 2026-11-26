@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { ApiErrorBody } from '../shared/errors.js'
 import { uuidSchema } from '../shared/schemas.js'
-import { openDatabase, type Database } from './db/client.js'
+import type { Database } from './db/client.js'
 import { ConfigError } from './env.js'
 import { ApiError, pgErrorCode } from './errors.js'
 import { buildClearedSessionCookie } from './security/session.js'
@@ -15,7 +15,8 @@ export interface RequestContext {
 
 export type Handler = (ctx: RequestContext) => Promise<Response>
 
-const MAX_BODY_BYTES = 32 * 1024
+/** Large enough to assign a few thousand people to one task, small enough to stay cheap to parse. */
+const MAX_BODY_BYTES = 128 * 1024
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
 interface JsonInit {
@@ -65,7 +66,7 @@ export function matchPath(pattern: string, pathname: string): Record<string, str
 function validationError(error: z.ZodError): ApiError {
   return new ApiError('VALIDATION_ERROR', {
     message: error.issues[0]?.message,
-    details: z.flattenError(error).fieldErrors as Record<string, string[]>,
+    details: z.flattenError(error).fieldErrors,
   })
 }
 
@@ -97,6 +98,13 @@ export async function readJson<T extends z.ZodType>(
   return parsed.data
 }
 
+/** Parses and validates the URL's query string. */
+export function parseQuery<T extends z.ZodType>(request: Request, schema: T): z.output<T> {
+  const parsed = schema.safeParse(Object.fromEntries(new URL(request.url).searchParams))
+  if (!parsed.success) throw validationError(parsed.error)
+  return parsed.data
+}
+
 /** Validates a path parameter that must be a UUID. */
 export function parseId(value: string | undefined): string {
   const parsed = uuidSchema.safeParse(value)
@@ -108,7 +116,7 @@ export function parseId(value: string | undefined): string {
  * CSRF defence in depth on top of SameSite=Strict: a browser-initiated write
  * that names a different origin is refused. (Non-browser clients send no Origin.)
  */
-function assertSameOrigin(request: Request): void {
+export function assertSameOrigin(request: Request): void {
   if (SAFE_METHODS.has(request.method)) return
   const origin = request.headers.get('origin')
   if (!origin) return
@@ -124,7 +132,7 @@ function assertSameOrigin(request: Request): void {
   if (originHost !== host) throw new ApiError('FORBIDDEN_ORIGIN')
 }
 
-function errorResponse(error: unknown, request: Request): Response {
+export function errorResponse(error: unknown, request: Request): Response {
   if (error instanceof ApiError) {
     const headers = { ...error.headers }
     const cookies = error.code === 'SESSION_INVALID' ? [buildClearedSessionCookie(request)] : []
@@ -149,28 +157,4 @@ function errorResponse(error: unknown, request: Request): Response {
   })
   const body: ApiErrorBody = { error: { code: 'SERVER_ERROR', message: new ApiError('SERVER_ERROR').message } }
   return json(body, { status: 500 })
-}
-
-/**
- * Wraps a handler as a Vercel Function method export: matches the path, opens a
- * per-request database connection, closes it afterwards, and converts every
- * failure into the standard error body.
- */
-export function handle(pattern: string, handler: Handler): (request: Request) => Promise<Response> {
-  return async (request) => {
-    try {
-      assertSameOrigin(request)
-      const params = matchPath(pattern, new URL(request.url).pathname)
-      if (!params) throw new ApiError('NOT_FOUND')
-
-      const { db, close } = await openDatabase()
-      try {
-        return await handler({ request, db, params })
-      } finally {
-        await close().catch(() => undefined)
-      }
-    } catch (error) {
-      return errorResponse(error, request)
-    }
-  }
 }
